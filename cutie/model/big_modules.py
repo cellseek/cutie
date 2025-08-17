@@ -8,14 +8,14 @@ g - usually denotes features that are not shared between objects
 The trailing number of a variable usually denotes the stride
 """
 
-from omegaconf import DictConfig
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from omegaconf import DictConfig
 
 from cutie.model.group_modules import *
-from cutie.model.utils import resnet
 from cutie.model.modules import *
+from cutie.model.utils import resnet
 
 
 class PixelEncoder(nn.Module):
@@ -42,7 +42,9 @@ class PixelEncoder(nn.Module):
         else:
             raise NotImplementedError
 
-    def forward(self, x: torch.Tensor) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+    def forward(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -80,7 +82,7 @@ class KeyProjection(nn.Module):
 
     def forward(
         self, x: torch.Tensor, *, need_s: bool, need_e: bool
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.pix_feat_proj(x)
         shrinkage = self.d_proj(x) ** 2 + 1 if (need_s) else None
         selection = torch.sigmoid(self.e_proj(x)) if (need_e) else None
@@ -133,8 +135,8 @@ class MaskEncoder(nn.Module):
         others: torch.Tensor,
         *,
         deep_update: bool = True,
-        chunk_size: int = -1
-    ) -> (torch.Tensor, torch.Tensor):
+        chunk_size: int = -1,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # ms_features are from the key encoder
         # we only use the first one (lowest resolution), following XMem
         if self.single_object:
@@ -220,7 +222,7 @@ class PixelFeatureFuser(nn.Module):
         last_mask: torch.Tensor,
         last_others: torch.Tensor,
         *,
-        chunk_size: int = -1
+        chunk_size: int = -1,
     ) -> torch.Tensor:
         batch_size, num_objects = pixel_memory.shape[:2]
 
@@ -281,8 +283,8 @@ class MaskDecoder(nn.Module):
         sensory: torch.Tensor,
         *,
         chunk_size: int = -1,
-        update_sensory: bool = True
-    ) -> (torch.Tensor, torch.Tensor):
+        update_sensory: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
 
         batch_size, num_objects = memory_readout.shape[:2]
         f8, f4 = self.decoder_feat_proc(ms_image_feat[1:])

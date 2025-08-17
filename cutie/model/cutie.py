@@ -1,15 +1,16 @@
-from typing import List, Dict
 import logging
-from omegaconf import DictConfig
+from typing import Dict, List
+
 import torch
 import torch.nn as nn
+from omegaconf import DictConfig
 
-from cutie.model.modules import *
-from cutie.model.big_modules import *
 from cutie.model.aux_modules import AuxComputer
-from cutie.model.utils.memory_utils import *
-from cutie.model.transformer.object_transformer import QueryTransformer
+from cutie.model.big_modules import *
+from cutie.model.modules import *
 from cutie.model.transformer.object_summarizer import ObjectSummarizer
+from cutie.model.transformer.object_transformer import QueryTransformer
+from cutie.model.utils.memory_utils import *
 from cutie.utils.tensor_utils import aggregate
 
 log = logging.getLogger()
@@ -64,7 +65,7 @@ class CUTIE(nn.Module):
 
     def encode_image(
         self, image: torch.Tensor
-    ) -> (Iterable[torch.Tensor], torch.Tensor):
+    ) -> tuple[Iterable[torch.Tensor], torch.Tensor]:
         image = (image - self.pixel_mean) / self.pixel_std
         ms_image_feat = self.pixel_encoder(image)
         return ms_image_feat, self.pix_feat_proj(ms_image_feat[0])
@@ -79,7 +80,7 @@ class CUTIE(nn.Module):
         deep_update: bool = True,
         chunk_size: int = -1,
         need_weights: bool = False,
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         image = (image - self.pixel_mean) / self.pixel_std
         others = self._get_others(masks)
         mask_value, new_sensory = self.mask_encoder(
@@ -105,7 +106,7 @@ class CUTIE(nn.Module):
         *,
         need_sk: bool = True,
         need_ek: bool = True,
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         key, shrinkage, selection = self.key_proj(
             final_pix_feat, need_s=need_sk, need_e=need_ek
         )
@@ -125,7 +126,7 @@ class CUTIE(nn.Module):
         sensory: torch.Tensor,
         last_mask: torch.Tensor,
         selector: torch.Tensor,
-    ) -> (torch.Tensor, Dict[str, torch.Tensor]):
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         query_key       : B * CK * H * W
         query_selection : B * CK * H * W
@@ -186,7 +187,7 @@ class CUTIE(nn.Module):
 
     def readout_query(
         self, pixel_readout, obj_memory, *, selector=None, need_weights=False
-    ) -> (torch.Tensor, Dict[str, torch.Tensor]):
+    ) -> tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         if not self.object_transformer_enabled:
             return pixel_readout, None
         return self.object_transformer(
@@ -202,7 +203,7 @@ class CUTIE(nn.Module):
         selector: bool = None,
         chunk_size: int = -1,
         update_sensory: bool = True,
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         multi_scale_features is from the key encoder for skip-connection
         memory_readout is from working/long-term memory

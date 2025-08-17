@@ -1,10 +1,11 @@
 import logging
-from omegaconf import DictConfig
-from typing import List, Dict
-import torch
+from typing import Dict, List
 
-from cutie.inference.object_manager import ObjectManager
+import torch
+from omegaconf import DictConfig
+
 from cutie.inference.kv_memory_store import KeyValueMemoryStore
+from cutie.inference.object_manager import ObjectManager
 from cutie.model.cutie import CUTIE
 from cutie.model.utils.memory_utils import *
 
@@ -369,7 +370,7 @@ class MemoryManager:
         candidate_selection: torch.Tensor,
         candidate_value: Dict[int, torch.Tensor],
         usage: torch.Tensor,
-    ) -> (torch.Tensor, Dict[int, torch.Tensor], torch.Tensor):
+    ) -> Tuple[torch.Tensor, Dict[int, torch.Tensor], torch.Tensor]:
         # find the indices with max usage
         bs = candidate_key.shape[0]
         assert bs in [1, 2]

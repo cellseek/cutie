@@ -1,11 +1,12 @@
 # Modified from PyTorch nn.Transformer
 
-from typing import List, Callable
+from typing import Callable, List
 
 import torch
-from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import Tensor
+
 from cutie.model.channel_attn import CAResBlock
 
 
@@ -81,8 +82,8 @@ class CrossAttention(nn.Module):
         mem_pe: torch.Tensor,
         attn_mask: bool = None,
         *,
-        need_weights: bool = False
-    ) -> (torch.Tensor, torch.Tensor):
+        need_weights: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x = self.norm(x)
         if self.add_pe_to_qkv[0]:
             q = x + x_pe

@@ -1,6 +1,8 @@
 import warnings
 from typing import Iterable
+
 import torch
+
 from cutie.model.cutie import CUTIE
 
 
@@ -26,7 +28,7 @@ class ImageFeatureStore:
 
     def get_features(
         self, index: int, image: torch.Tensor
-    ) -> (Iterable[torch.Tensor], torch.Tensor):
+    ) -> tuple[Iterable[torch.Tensor], torch.Tensor]:
         if index not in self._store:
             self._encode_feature(index, image)
 
@@ -34,7 +36,7 @@ class ImageFeatureStore:
 
     def get_key(
         self, index: int, image: torch.Tensor
-    ) -> (torch.Tensor, torch.Tensor, torch.Tensor):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         if index not in self._store:
             self._encode_feature(index, image)
 

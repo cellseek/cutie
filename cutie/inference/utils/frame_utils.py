@@ -1,6 +1,6 @@
 from typing import Dict, List, Tuple
-import torch
 
+import torch
 from inference.object_info import ObjectInfo
 
 
@@ -24,7 +24,7 @@ class FrameInfo:
         return self.info["frame"]
 
     @property
-    def shape(self) -> Tuple(int):
+    def shape(self) -> Tuple[int]:
         return self.info["shape"]
 
     @property

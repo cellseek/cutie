@@ -1,5 +1,6 @@
-from typing import Dict, List, Optional, Literal
 from collections import defaultdict
+from typing import Dict, List, Literal, Optional
+
 import torch
 
 
@@ -301,13 +302,15 @@ class KeyValueMemoryStore:
             usage = self.use_cnt[bucket_id] / self.life_cnt[bucket_id]
             return usage
 
-    def get_all_sliced(self, bucket_id: int, start: int, end: int) -> (
+    from typing import Tuple
+
+    def get_all_sliced(self, bucket_id: int, start: int, end: int) -> Tuple[
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,
         Dict[int, torch.Tensor],
         torch.Tensor,
-    ):
+    ]:
         # return k, sk, ek, value, normalized usage in order, sliced by start and end
         # this only queries the temporary memory
 

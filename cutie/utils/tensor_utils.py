@@ -1,10 +1,11 @@
-from typing import List, Iterable
+from typing import Iterable, List
+
 import torch
 import torch.nn.functional as F
 
 
 # STM
-def pad_divide_by(in_img: torch.Tensor, d: int) -> (torch.Tensor, Iterable[int]):
+def pad_divide_by(in_img: torch.Tensor, d: int) -> tuple[torch.Tensor, Iterable[int]]:
     h, w = in_img.shape[-2:]
 
     if h % d > 0:
