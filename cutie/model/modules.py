@@ -1,4 +1,5 @@
-from typing import List, Iterable
+from typing import Iterable, List
+
 import torch
 import torch.nn as nn
 
@@ -69,7 +70,7 @@ class SensoryUpdater(nn.Module):
             + self.g4_conv(downsample_groups(g[2], ratio=1 / 4))
         )
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             g = g.float()
             h = h.float()
             values = self.transform(torch.cat([g, h], dim=2))
@@ -88,7 +89,7 @@ class SensoryDeepUpdater(nn.Module):
         nn.init.xavier_normal_(self.transform.weight)
 
     def forward(self, g: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast("cuda", enabled=False):
             g = g.float()
             h = h.float()
             values = self.transform(torch.cat([g, h], dim=2))
