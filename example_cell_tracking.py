@@ -94,25 +94,18 @@ def main():
         log.info("Initializing CellTracker...")
 
         # Note: You may need to adjust these paths based on your setup
-        config_path = "cutie/config/cell_tracking_config.yaml"
+        config_name = "cell_tracking_config"  # Without .yaml extension
         weights_path = "weights/cutie-base-mega.pth"
 
-        # Check if files exist
-        if not Path(config_path).exists():
-            log.warning(f"Config file not found: {config_path}")
-            log.info("Using default configuration...")
-            config_path = None
-
+        # Check if weights file exists
         if not Path(weights_path).exists():
             log.warning(f"Weights file not found: {weights_path}")
             log.info("Please download the model weights first")
             return
 
         tracker = CellTracker(
-            config_path=config_path, weights_path=weights_path, device="auto"
-        )
-
-        # Track the sequence
+            config_name=config_name, weights_path=weights_path, device="auto"
+        )  # Track the sequence
         log.info("Starting cell tracking...")
         predictions = tracker.track_sequence(
             images=images, first_frame_mask=first_mask, object_ids=object_ids

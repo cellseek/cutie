@@ -423,9 +423,13 @@ class MemoryManager:
         return self._get_sensory_by_ids(ids)
 
     def clear_non_permanent_memory(self):
+        log.debug("About to call work_mem.clear_non_permanent_memory()")
         self.work_mem.clear_non_permanent_memory()
+        log.debug("Completed work_mem.clear_non_permanent_memory()")
         if self.use_long_term:
+            log.debug("About to call long_mem.clear_non_permanent_memory()")
             self.long_mem.clear_non_permanent_memory()
+            log.debug("Completed long_mem.clear_non_permanent_memory()")
 
     def clear_sensory_memory(self):
         self.sensory = {}

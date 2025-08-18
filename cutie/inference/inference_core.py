@@ -23,7 +23,7 @@ class InferenceCore:
         cfg: DictConfig,
         *,
         image_feature_store: ImageFeatureStore = None,
-        cell_tracking_mode: bool = False
+        cell_tracking_mode: bool = False,
     ):
         self.network = network
         self.cfg = cfg
@@ -73,16 +73,15 @@ class InferenceCore:
 
     def clear_memory_for_cell_tracking(self):
         """
-        Clear all memory for cell tracking mode.
-        This reinitializes the model for frame-by-frame processing.
+        Clear non-permanent memory for cell tracking mode.
+        This keeps the permanent memory (first frame) but clears working memory.
         """
-        self.curr_ti = -1
-        self.last_mem_ti = 0
-        # Clear all non-permanent memory but keep the object manager
+        log.debug("About to call memory.clear_non_permanent_memory()")
+        # Only clear non-permanent memory, keep permanent memory
         self.memory.clear_non_permanent_memory()
-        self.memory.clear_sensory_memory()
-        # Reset the last mask
-        self.last_mask = None
+        log.debug("Completed memory.clear_non_permanent_memory()")
+        # Don't reset time indices in cell tracking mode - keep them for consistency
+        # Don't clear last_mask - we need it for the next frame
 
     def update_config(self, cfg):
         self.mem_every = cfg["mem_every"]
@@ -98,7 +97,7 @@ class InferenceCore:
         selection: torch.Tensor,
         *,
         is_deep_update: bool = True,
-        force_permanent: bool = False
+        force_permanent: bool = False,
     ) -> None:
         """
         Memorize the given segmentation in all memory stores.
@@ -211,7 +210,7 @@ class InferenceCore:
         idx_mask: bool = True,
         end: bool = False,
         delete_buffer: bool = True,
-        force_permanent: bool = False
+        force_permanent: bool = False,
     ) -> torch.Tensor:
         """
         Take a step with a new incoming image.
@@ -234,6 +233,9 @@ class InferenceCore:
         delete_buffer: whether to delete the image feature buffer after this step
         force_permanent: the memory recorded this frame will be added to the permanent memory
         """
+        log.debug(
+            f"step() called with curr_ti={self.curr_ti}, mask is {'None' if mask is None else 'provided'}"
+        )
         if objects is None and mask is not None:
             assert not idx_mask
             objects = list(range(1, mask.shape[0] + 1))
@@ -243,10 +245,14 @@ class InferenceCore:
         if self.max_internal_size > 0:
             h, w = image.shape[-2:]
             min_side = min(h, w)
+            log.debug(
+                f"Image size: {h}x{w}, min_side: {min_side}, max_internal_size: {self.max_internal_size}"
+            )
             if min_side > self.max_internal_size:
                 resize_needed = True
                 new_h = int(h / min_side * self.max_internal_size)
                 new_w = int(w / min_side * self.max_internal_size)
+                log.debug(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
                 image = F.interpolate(
                     image.unsqueeze(0),
                     size=(new_h, new_w),
@@ -276,7 +282,11 @@ class InferenceCore:
 
         # Cell tracking mode: clear memory for each frame (except first frame)
         if self.cell_tracking_mode and self.curr_ti > 0:
+            log.debug(
+                f"About to clear memory for cell tracking, curr_ti={self.curr_ti}"
+            )
             self.clear_memory_for_cell_tracking()
+            log.debug(f"Completed clear memory for cell tracking")
 
         image, self.pad = pad_divide_by(image, 16)
         image = image.unsqueeze(0)  # add the batch dimension
@@ -296,10 +306,14 @@ class InferenceCore:
         )
 
         # encoding the image
+        log.debug("About to call image_feature_store.get_features")
         ms_feat, pix_feat = self.image_feature_store.get_features(self.curr_ti, image)
+        log.debug("Completed image_feature_store.get_features")
+        log.debug("About to call image_feature_store.get_key")
         key, shrinkage, selection = self.image_feature_store.get_key(
             self.curr_ti, image
         )
+        log.debug("Completed image_feature_store.get_key")
 
         # segmentation from memory if needed
         if need_segment:

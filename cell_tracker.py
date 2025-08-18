@@ -5,12 +5,14 @@ This module provides a simple interface for cell tracking using the modified CUT
 """
 
 import logging
+import os
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import torch.nn.functional as F
-from omegaconf import OmegaConf
+from hydra import compose, initialize
+from omegaconf import open_dict
 
 from cutie.inference.cell_tracking_inference import CellTrackingInferenceCore
 from cutie.model.cutie import CUTIE
@@ -29,13 +31,13 @@ class CellTracker:
     """
 
     def __init__(
-        self, config_path: str = None, weights_path: str = None, device: str = "auto"
+        self, config_name: str = None, weights_path: str = None, device: str = "auto"
     ):
         """
         Initialize the cell tracker.
 
         Args:
-            config_path: Path to configuration file (uses default if None)
+            config_name: Name of config file without .yaml extension (uses default if None)
             weights_path: Path to model weights (uses default if None)
             device: Device to use ('auto', 'cuda', 'cpu')
         """
@@ -45,11 +47,15 @@ class CellTracker:
         else:
             self.device = torch.device(device)
 
-        # Load configuration
-        if config_path is None:
-            config_path = "cutie/config/cell_tracking_config.yaml"
+        # Load configuration using Hydra
+        if config_name is None:
+            config_name = "cell_tracking_config"
 
-        self.cfg = OmegaConf.load(config_path)
+        # Initialize Hydra and compose config
+        initialize(
+            version_base="1.3.2", config_path="cutie/config", job_name="cell_tracking"
+        )
+        self.cfg = compose(config_name=config_name)
 
         # Load model
         self.network = CUTIE(self.cfg).eval().to(self.device)
@@ -59,13 +65,13 @@ class CellTracker:
             weights_path = self.cfg.weights
 
         checkpoint = torch.load(weights_path, map_location=self.device)
-        self.network.load_state_dict(checkpoint)
+        self.network.load_weights(checkpoint)
 
         # Initialize inference core
         self.inference_core = CellTrackingInferenceCore(self.network, self.cfg)
 
         log.info(f"CellTracker initialized on {self.device}")
-        log.info(f"Config: {config_path}, Weights: {weights_path}")
+        log.info(f"Config: {config_name}, Weights: {weights_path}")
 
     def track_sequence(
         self,
@@ -90,6 +96,7 @@ class CellTracker:
         self.inference_core.reset_for_new_sequence()
 
         for frame_idx, image in enumerate(images):
+            log.info(f"Processing frame {frame_idx}")
             # Convert numpy image to tensor
             if isinstance(image, np.ndarray):
                 # Convert from HWC to CHW and normalize to [0,1]
@@ -98,22 +105,33 @@ class CellTracker:
                 image_tensor = image
 
             image_tensor = image_tensor.to(self.device)
+            log.info(f"Frame {frame_idx}: Image tensor moved to device")
 
             # Process first frame with mask if provided
             if frame_idx == 0 and first_frame_mask is not None:
+                log.info(f"Frame {frame_idx}: Processing first frame with mask")
                 mask_tensor = torch.from_numpy(first_frame_mask).long().to(self.device)
 
                 with torch.no_grad():
+                    log.info(
+                        f"Frame {frame_idx}: Calling inference_core.step() with mask"
+                    )
                     pred_prob = self.inference_core.step(
                         image=image_tensor,
                         mask=mask_tensor,
                         objects=object_ids,
                         idx_mask=True,
                     )
+                    log.info(f"Frame {frame_idx}: inference_core.step() completed")
             else:
                 # Subsequent frames
+                log.info(f"Frame {frame_idx}: Processing subsequent frame")
                 with torch.no_grad():
+                    log.info(
+                        f"Frame {frame_idx}: Calling inference_core.step() without mask"
+                    )
                     pred_prob = self.inference_core.step(image=image_tensor)
+                    log.info(f"Frame {frame_idx}: inference_core.step() completed")
 
             # Convert prediction to mask
             mask = self.inference_core.output_prob_to_mask(pred_prob)

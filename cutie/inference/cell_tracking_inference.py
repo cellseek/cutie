@@ -81,8 +81,22 @@ class CellTrackingInferenceCore(InferenceCore):
         """
         Reset everything for a new video sequence.
         """
+        # Clear all memory and reset object manager for complete fresh start
         self.clear_memory()
+
+        # Also reset the object manager to clear object ID mappings from previous sequences
+        from cutie.inference.object_manager import ObjectManager
+
+        self.object_manager = ObjectManager()
+
+        # Recreate memory manager with fresh object manager
+        from cutie.inference.memory_manager import MemoryManager
+
+        self.memory = MemoryManager(cfg=self.cfg, object_manager=self.object_manager)
+
         self.curr_ti = -1
         self.last_mem_ti = 0
         self.last_mask = None
-        log.info("Reset CellTrackingInferenceCore for new sequence")
+        log.info(
+            "Reset CellTrackingInferenceCore for new sequence with fresh object manager"
+        )
