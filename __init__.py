@@ -5,22 +5,19 @@ This module provides a simple interface for cell tracking using the modified CUT
 """
 
 import logging
-import os
-from typing import List, Optional, Tuple, Union
+from typing import List, Union
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 from hydra import compose, initialize
-from omegaconf import open_dict
 
-from cutie.inference.cell_tracking_inference import CellTrackingInferenceCore
-from cutie.model.cutie import CUTIE
+from .cutie.inference.cell_tracking_inference import CellTrackingInferenceCore
+from .cutie.model.cutie import CUTIE
 
 log = logging.getLogger()
 
 
-class CellTracker:
+class CutieTracker:
     """
     Simple interface for cell tracking using modified CUTIE.
 

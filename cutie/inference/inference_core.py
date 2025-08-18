@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Iterable, List, Optional
+from typing import Iterable, List, Optional
 
 import numpy as np
 import torch
