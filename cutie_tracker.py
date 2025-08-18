@@ -22,60 +22,20 @@ class CutieTracker:
     in existing codebases by providing the same interface methods.
     """
 
-    def __init__(self, device="cuda:0", config_overrides=None):
+    def __init__(self, device="cuda:0"):
         """
         Initialize the CUTIE tracker.
 
         Args:
             device (str): Device for computation ('cuda:0', 'cpu', etc.)
-            config_overrides (dict): Configuration overrides for cell tracking
         """
         self.device = device
-        self.config_overrides = config_overrides or {}
 
         # Load the default CUTIE model
         self.cutie_model = get_default_model()
 
-        # Apply configuration overrides for cell tracking
-        if self.config_overrides:
-            # Update memory configuration
-            if "max_mem_frames" in self.config_overrides:
-                self.cutie_model.cfg.max_mem_frames = self.config_overrides[
-                    "max_mem_frames"
-                ]
-
-            if "top_k" in self.config_overrides:
-                self.cutie_model.cfg.top_k = self.config_overrides["top_k"]
-
-            if "use_long_term" in self.config_overrides:
-                self.cutie_model.cfg.use_long_term = self.config_overrides[
-                    "use_long_term"
-                ]
-
-            if "stagger_updates" in self.config_overrides:
-                self.cutie_model.cfg.stagger_updates = self.config_overrides[
-                    "stagger_updates"
-                ]
-
-            if "mem_every" in self.config_overrides:
-                self.cutie_model.cfg.mem_every = self.config_overrides["mem_every"]
-
-            if "chunk_size" in self.config_overrides:
-                self.cutie_model.cfg.chunk_size = self.config_overrides["chunk_size"]
-
-            if "amp" in self.config_overrides:
-                self.cutie_model.cfg.amp = self.config_overrides["amp"]
-
         # Create inference core
         self.processor = InferenceCore(self.cutie_model, cfg=self.cutie_model.cfg)
-
-        # Set internal size for memory optimization
-        if self.config_overrides and "max_internal_size" in self.config_overrides:
-            self.processor.max_internal_size = self.config_overrides[
-                "max_internal_size"
-            ]
-        else:
-            self.processor.max_internal_size = 320  # Conservative default for cells
 
         # Track initialization state
         self.initialized = False
@@ -223,54 +183,4 @@ class CutieTracker:
             alpha = 0.5
             painted_image = cv2.addWeighted(painted_image, 1 - alpha, overlay, alpha, 0)
 
-            # Draw contours for better visibility
-            contours, _ = cv2.findContours(
-                obj_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
-            cv2.drawContours(painted_image, contours, -1, color, 2)
-
         return painted_image
-
-
-class CutieWrapper:
-    """
-    Wrapper class that provides the exact same interface as XMem for GUI compatibility.
-
-    This class ensures that the CUTIE tracker can be used as a direct replacement
-    for XMem in the existing GUI code without modifications.
-    """
-
-    def __init__(self, xmem_checkpoint=None, device="cuda:0", config_overrides=None):
-        """
-        Initialize wrapper (checkpoint parameter ignored for CUTIE compatibility).
-
-        Args:
-            xmem_checkpoint: Ignored (kept for interface compatibility)
-            device (str): Device for computation
-            config_overrides (dict): Configuration overrides for cell tracking
-        """
-        # Create CUTIE tracker instance
-        self.xmem = CutieTracker(device=device, config_overrides=config_overrides)
-        self.device = device
-
-    def track(self, frame, first_frame_annotation=None):
-        """
-        XMem-compatible track method.
-        """
-        return self.xmem.track(frame, first_frame_annotation)
-
-    def clear_memory(self):
-        """
-        XMem-compatible clear memory method.
-        """
-        self.xmem.clear_memory()
-
-
-# For direct replacement in existing code
-def XMem(xmem_checkpoint=None, device="cuda:0"):
-    """
-    Factory function that returns a CUTIE wrapper with XMem interface.
-
-    This allows existing code that calls XMem() to seamlessly use CUTIE instead.
-    """
-    return CutieWrapper(xmem_checkpoint, device)

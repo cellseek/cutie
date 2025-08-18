@@ -1,16 +1,16 @@
-from typing import List, Optional, Iterable, Dict
 import logging
-from omegaconf import DictConfig
+from typing import Dict, Iterable, List, Optional
 
 import numpy as np
 import torch
 import torch.nn.functional as F
+from omegaconf import DictConfig
 
+from cutie.inference.image_feature_store import ImageFeatureStore
 from cutie.inference.memory_manager import MemoryManager
 from cutie.inference.object_manager import ObjectManager
-from cutie.inference.image_feature_store import ImageFeatureStore
 from cutie.model.cutie import CUTIE
-from cutie.utils.tensor_utils import pad_divide_by, unpad, aggregate
+from cutie.utils.tensor_utils import aggregate, pad_divide_by, unpad
 
 log = logging.getLogger()
 
@@ -22,7 +22,8 @@ class InferenceCore:
         network: CUTIE,
         cfg: DictConfig,
         *,
-        image_feature_store: ImageFeatureStore = None
+        image_feature_store: ImageFeatureStore = None,
+        cell_tracking_mode: bool = False
     ):
         self.network = network
         self.cfg = cfg
@@ -32,6 +33,9 @@ class InferenceCore:
         self.save_aux = cfg.save_aux
         self.max_internal_size = cfg.max_internal_size
         self.flip_aug = cfg.flip_aug
+
+        # Cell tracking mode: reinitialize memory each frame
+        self.cell_tracking_mode = cell_tracking_mode
 
         self.curr_ti = -1
         self.last_mem_ti = 0
@@ -66,6 +70,19 @@ class InferenceCore:
         self.curr_ti = -1
         self.last_mem_ti = 0
         self.memory.clear_sensory_memory()
+
+    def clear_memory_for_cell_tracking(self):
+        """
+        Clear all memory for cell tracking mode.
+        This reinitializes the model for frame-by-frame processing.
+        """
+        self.curr_ti = -1
+        self.last_mem_ti = 0
+        # Clear all non-permanent memory but keep the object manager
+        self.memory.clear_non_permanent_memory()
+        self.memory.clear_sensory_memory()
+        # Reset the last mask
+        self.last_mask = None
 
     def update_config(self, cfg):
         self.mem_every = cfg["mem_every"]
@@ -256,6 +273,10 @@ class InferenceCore:
                         )[0]
 
         self.curr_ti += 1
+
+        # Cell tracking mode: clear memory for each frame (except first frame)
+        if self.cell_tracking_mode and self.curr_ti > 0:
+            self.clear_memory_for_cell_tracking()
 
         image, self.pad = pad_divide_by(image, 16)
         image = image.unsqueeze(0)  # add the batch dimension

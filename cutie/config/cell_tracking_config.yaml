@@ -8,19 +8,28 @@ weights: weights/cutie-base-mega.pth
 # maximum internal processing size; reducing this speeds up processing
 max_internal_size: 480
 
+# Disable long-term memory for cell tracking
 use_long_term: False
-mem_every: 5
-top_k: 30
-stagger_updates: 5
-chunk_size: -1 # number of objects to process in parallel; -1 means unlimited
+
+# Add memory every frame for immediate tracking
+mem_every: 1
+
+# Use minimal top_k for efficiency
+top_k: 10
+
+# Update every frame
+stagger_updates: 1
+
+# Process objects one by one to reduce memory usage
+chunk_size: 1
 
 save_aux: False
 flip_aug: False
 
-# only relevant when long_term is not enabled
-max_mem_frames: 5
+# Only keep 1 frame in working memory (essentially frame-by-frame)
+max_mem_frames: 1
 
-# only relevant when long_term is enabled
+# Long-term memory settings (unused but kept for compatibility)
 long_term:
   count_usage: True
   max_mem_frames: 10
