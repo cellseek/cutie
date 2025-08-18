@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cutie"
+version = "1.0.0"
+description = "CUTIE: Putting the Object Back into Video Object Segmentation - Cell Tracking Edition"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Ho Kei Cheng", email = "hkchengrex@gmail.com" }]
+keywords = [
+  "computer vision",
+  "video object segmentation",
+  "cell tracking",
+  "deep learning",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+dependencies = [
+  "torch",
+  "torchvision",
+  "numpy",
+  "hydra-core",
+  "omegaconf",
+  "tqdm",
+  "requests",
+]
+
+[project.urls]
+Homepage = "https://hkchengrex.github.io/Cutie"
+Repository = "https://github.com/hkchengrex/Cutie"
+Documentation = "https://hkchengrex.github.io/Cutie"
+"Bug Tracker" = "https://github.com/hkchengrex/Cutie/issues"
+
+[tool.setuptools]
+package-dir = { "" = "." }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cutie*"]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools.package-data]
+cutie = ["config/*.yaml", "config/model/*.yaml", "weights/*.pth"]
