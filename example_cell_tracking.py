@@ -105,19 +105,50 @@ def main():
 
         tracker = CellTracker(
             config_name=config_name, weights_path=weights_path, device="auto"
-        )  # Track the sequence
-        log.info("Starting cell tracking...")
+        )
+
+        # Example 1: Basic tracking
+        log.info("Starting basic cell tracking...")
         predictions = tracker.track_sequence(
             images=images, first_frame_mask=first_mask, object_ids=object_ids
         )
 
         # Analyze results
-        log.info("=== Tracking Results ===")
+        log.info("=== Basic Tracking Results ===")
         for frame_idx, pred_mask in enumerate(predictions):
             unique_ids = np.unique(pred_mask)
             num_objects = len(unique_ids) - 1  # subtract background
             log.info(
                 f"Frame {frame_idx + 1}: {num_objects} objects detected {list(unique_ids[1:])}"
+            )
+
+        # Example 2: Tracking with manual corrections
+        log.info("\n=== Tracking with Manual Corrections ===")
+
+        # Simulate manual corrections (in real usage, these come from user input)
+        corrected_masks = [None] * len(images)
+        # Simulate correction on frame 3 - using first frame mask as example correction
+        corrected_masks[2] = (
+            first_mask  # This would be a user-corrected mask in practice
+        )
+
+        tracker.reset()  # Reset for new sequence
+        predictions_corrected = tracker.track_sequence(
+            images=images,
+            first_frame_mask=first_mask,
+            object_ids=object_ids,
+            corrected_masks=corrected_masks,
+        )
+
+        log.info("Tracking with corrections results:")
+        for frame_idx, pred_mask in enumerate(predictions_corrected):
+            unique_ids = np.unique(pred_mask)
+            num_objects = len(unique_ids) - 1
+            correction_note = (
+                " (corrected)" if corrected_masks[frame_idx] is not None else ""
+            )
+            log.info(
+                f"Frame {frame_idx + 1}: {num_objects} objects detected {list(unique_ids[1:])}{correction_note}"
             )
 
         # Show memory statistics

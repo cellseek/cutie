@@ -16,9 +16,10 @@ class CellTrackingInferenceCore(InferenceCore):
     Specialized inference core for cell tracking.
 
     Key differences from standard CUTIE:
-    1. Memory is cleared after each frame (except the first)
-    2. Only uses working memory (no long-term memory)
-    3. Designed for scenarios where objects look similar and disappearing objects don't need to be remembered
+    1. Designed for frame-by-frame processing with manual corrections
+    2. Every frame is treated as a "first frame" with reference mask
+    3. No long-term memory functionality
+    4. Optimized for cell tracking scenarios where objects look similar
     """
 
     def __init__(
@@ -28,22 +29,19 @@ class CellTrackingInferenceCore(InferenceCore):
         *,
         image_feature_store: ImageFeatureStore = None,
     ):
-        # Force cell tracking mode
+        # Initialize without cell tracking mode since we handle it differently
         super().__init__(
             network,
             cfg,
             image_feature_store=image_feature_store,
-            cell_tracking_mode=True,
+            cell_tracking_mode=False,  # We handle our own logic
         )
 
-        # Override config for cell tracking
+        # Override config for cell tracking - disable long-term memory
         self.mem_every = 1  # Add memory every frame
         self.cfg.max_mem_frames = 1  # Only keep one frame in memory
-        self.cfg.use_long_term = False  # Disable long-term memory
 
-        log.info(
-            "Initialized CellTrackingInferenceCore with frame-by-frame memory reset"
-        )
+        log.info("Initialized CellTrackingInferenceCore for frame-by-frame processing")
         log.info(
             f"Memory settings: mem_every={self.mem_every}, max_mem_frames={self.cfg.max_mem_frames}"
         )
@@ -60,13 +58,14 @@ class CellTrackingInferenceCore(InferenceCore):
         force_permanent: bool = False,
     ) -> torch.Tensor:
         """
-        Cell tracking step: processes one frame and resets memory for the next.
+        Cell tracking step: processes one frame treating it as a reference frame.
 
-        For cell tracking, we:
-        1. Process the current frame
-        2. Clear non-permanent memory for the next frame
-        3. Keep object IDs consistent for tracking
+        For cell tracking, every frame is processed with its reference mask,
+        treating each step as if it's the first frame of a new sequence.
         """
+        # Always reset memory before processing each frame
+        self.clear_memory()
+
         return super().step(
             image=image,
             mask=mask,

@@ -25,9 +25,11 @@ class CellTracker:
     Simple interface for cell tracking using modified CUTIE.
 
     This tracker is designed for cell tracking scenarios where:
-    - Cells look similar and are difficult to distinguish
-    - Disappearing cells don't need long-term memory
-    - Frame-by-frame processing is sufficient
+    - Each frame is processed with reference to the previous corrected frame
+    - Manual corrections can be applied at any frame in the sequence
+    - Every frame is treated as a "first frame" with a reference mask
+    - Only working memory is used (no long-term memory complexity)
+    - Optimized for scenarios where cells look similar and need frequent corrections
     """
 
     def __init__(
@@ -78,28 +80,35 @@ class CellTracker:
         images: List[np.ndarray],
         first_frame_mask: np.ndarray = None,
         object_ids: List[int] = None,
+        corrected_masks: List[np.ndarray] = None,
     ) -> List[np.ndarray]:
         """
-        Track cells through a sequence of images.
+        Track cells through a sequence of images with optional manual corrections.
 
         Args:
             images: List of images as numpy arrays (H, W, 3) in range [0, 255]
             first_frame_mask: Initial mask as numpy array (H, W) with object IDs
             object_ids: List of object IDs present in the first frame
+            corrected_masks: Optional list of manually corrected masks. If provided,
+                           corrected_masks[i] will be used as ground truth for frame i
+                           and as input for tracking frame i+1. Use None for frames
+                           without corrections.
 
         Returns:
             List of predicted masks as numpy arrays (H, W) with object IDs
         """
         predictions = []
+        current_mask = first_frame_mask
+        current_object_ids = object_ids
 
         # Reset for new sequence
         self.inference_core.reset_for_new_sequence()
 
         for frame_idx, image in enumerate(images):
             log.info(f"Processing frame {frame_idx}")
+
             # Convert numpy image to tensor
             if isinstance(image, np.ndarray):
-                # Convert from HWC to CHW and normalize to [0,1]
                 image_tensor = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
             else:
                 image_tensor = image
@@ -107,40 +116,63 @@ class CellTracker:
             image_tensor = image_tensor.to(self.device)
             log.info(f"Frame {frame_idx}: Image tensor moved to device")
 
-            # Process first frame with mask if provided
-            if frame_idx == 0 and first_frame_mask is not None:
-                log.info(f"Frame {frame_idx}: Processing first frame with mask")
-                mask_tensor = torch.from_numpy(first_frame_mask).long().to(self.device)
+            # Use corrected mask if provided, otherwise use current mask
+            mask_to_use = None
+            if (
+                corrected_masks
+                and frame_idx < len(corrected_masks)
+                and corrected_masks[frame_idx] is not None
+            ):
+                mask_to_use = corrected_masks[frame_idx]
+                log.info(f"Frame {frame_idx}: Using provided corrected mask")
+            elif current_mask is not None:
+                mask_to_use = current_mask
+                log.info(f"Frame {frame_idx}: Using previous frame mask as reference")
+
+            # Process frame - always treat as "first frame" with mask if available
+            if mask_to_use is not None:
+                mask_tensor = torch.from_numpy(mask_to_use).long().to(self.device)
+
+                # Extract object IDs from mask if not provided
+                if current_object_ids is None:
+                    unique_ids = np.unique(mask_to_use)
+                    current_object_ids = [int(id) for id in unique_ids if id > 0]
 
                 with torch.no_grad():
-                    log.info(
-                        f"Frame {frame_idx}: Calling inference_core.step() with mask"
-                    )
+                    log.info(f"Frame {frame_idx}: Processing with reference mask")
                     pred_prob = self.inference_core.step(
                         image=image_tensor,
                         mask=mask_tensor,
-                        objects=object_ids,
+                        objects=current_object_ids,
                         idx_mask=True,
                     )
-                    log.info(f"Frame {frame_idx}: inference_core.step() completed")
             else:
-                # Subsequent frames
-                log.info(f"Frame {frame_idx}: Processing subsequent frame")
+                # No mask available - this should only happen for the very first frame
+                log.info(f"Frame {frame_idx}: Processing without reference mask")
                 with torch.no_grad():
-                    log.info(
-                        f"Frame {frame_idx}: Calling inference_core.step() without mask"
-                    )
                     pred_prob = self.inference_core.step(image=image_tensor)
-                    log.info(f"Frame {frame_idx}: inference_core.step() completed")
 
             # Convert prediction to mask
-            mask = self.inference_core.output_prob_to_mask(pred_prob)
-            mask_np = mask.cpu().numpy().astype(np.uint16)
-
+            predicted_mask = self.inference_core.output_prob_to_mask(pred_prob)
+            mask_np = predicted_mask.cpu().numpy().astype(np.uint16)
             predictions.append(mask_np)
 
+            # Update current mask for next frame (use corrected if available, otherwise prediction)
+            if (
+                corrected_masks
+                and frame_idx < len(corrected_masks)
+                and corrected_masks[frame_idx] is not None
+            ):
+                current_mask = corrected_masks[frame_idx]
+            else:
+                current_mask = mask_np
+
+            # Update object IDs for next frame
+            unique_ids = np.unique(current_mask)
+            current_object_ids = [int(id) for id in unique_ids if id > 0]
+
             log.debug(
-                f"Frame {frame_idx + 1}: {len(np.unique(mask_np)) - 1} objects detected"
+                f"Frame {frame_idx + 1}: {len(current_object_ids)} objects detected"
             )
 
         return predictions
@@ -205,5 +237,5 @@ class CellTracker:
             "working_memory_objects": self.inference_core.memory.work_mem.num_objects,
             "sensory_memory_objects": len(self.inference_core.memory.sensory),
             "current_frame": self.inference_core.curr_ti,
-            "memory_usage": "frame-by-frame (cell tracking mode)",
+            "memory_usage": "simplified cell tracking mode (working memory only)",
         }

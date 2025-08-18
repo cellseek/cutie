@@ -130,40 +130,15 @@ class MemoryManager:
 
             for objects in object_chunks:
                 this_sensory = self._get_sensory_by_ids(objects)
-                this_last_mask = self._get_mask_by_ids(last_mask, objects)
-                this_msk_value = self._get_visual_values_by_ids(objects)
-                visual_readout = self._readout(affinity, this_msk_value).view(
-                    bs, len(objects), self.CV, h, w
-                )
-                pixel_readout = network.pixel_fusion(
-                    pix_feat, visual_readout, this_sensory, this_last_mask
-                )
-                this_obj_mem = self._get_object_mem_by_ids(objects)
-                this_obj_mem = (
-                    this_obj_mem.unsqueeze(2) if this_obj_mem is not None else None
-                )
-                readout_memory, aux_features = network.readout_query(
-                    pixel_readout, this_obj_mem
-                )
-                for i, obj in enumerate(objects):
-                    all_readout_mem[obj] = readout_memory[:, i]
+                this_obj_v = self._get_object_mem_by_ids(objects)
+                this_visual_v = self._get_visual_values_by_ids(objects)
 
-                if self.save_aux:
-                    aux_output = {
-                        "sensory": this_sensory,
-                        "pixel_readout": pixel_readout,
-                        "q_logits": aux_features["logits"] if aux_features else None,
-                        "q_weights": (
-                            aux_features["q_weights"] if aux_features else None
-                        ),
-                        "p_weights": (
-                            aux_features["p_weights"] if aux_features else None
-                        ),
-                        "attn_mask": (
-                            aux_features["attn_mask"].float() if aux_features else None
-                        ),
-                    }
-                    self.aux = aux_output
+                this_readout_mem = network.pixel_reader(
+                    pix_feat, this_sensory, this_obj_v, this_visual_v, affinity
+                )
+
+                for i, obj in enumerate(objects):
+                    all_readout_mem[obj] = this_readout_mem[:, i]
 
         return all_readout_mem
 
@@ -171,110 +146,100 @@ class MemoryManager:
         self,
         key: torch.Tensor,
         shrinkage: torch.Tensor,
-        msk_value: torch.Tensor,
-        obj_value: torch.Tensor,
-        objects: List[int],
-        selection: torch.Tensor = None,
+        value: torch.Tensor,
+        obj_v: torch.Tensor,
+        obj_ids: List[int],
         *,
-        as_permanent: str = "none"
+        selection: torch.Tensor = None,  # Not used in simplified version
+        as_permanent: str = "none",
     ) -> None:
         """
         Add to working memory. Simplified to remove long-term memory logic.
         """
-        # key: (1/2)*C*H*W
-        # msk_value: (1/2)*num_objects*C*H*W
-        # obj_value: (1/2)*num_objects*Q*C
-        # objects contains a list of object ids corresponding to the objects in msk_value/obj_value
-        bs = key.shape[0]
-        assert shrinkage.shape[0] == bs
-        assert msk_value.shape[0] == bs
-        assert obj_value is None or obj_value.shape[0] == bs
+        # Infer dimensions if needed
+        if self.H is None:
+            self.H, self.W = key.shape[-2:]
+            self.CK, self.CV = key.shape[-3], value.shape[-3]
 
-        self.engaged = True
-        if self.H is None or self.config_stale:
-            self.config_stale = False
-            self.H, self.W = msk_value.shape[-2:]
-            self.HW = self.H * self.W
-            # convert from num. frames to num. tokens
-            self.max_work_tokens = self.max_mem_frames * self.HW
-
-        # key:   bs*C*N
-        # value: bs*num_objects*C*N
-        key = key.flatten(start_dim=2)
-        shrinkage = shrinkage.flatten(start_dim=2)
-        self.CK = key.shape[1]
-
-        msk_value = msk_value.flatten(start_dim=3)
-        self.CV = msk_value.shape[2]
-
-        # insert object values into object memory
-        if obj_value is not None:
-            for obj_id, obj in enumerate(objects):
-                if obj in self.obj_v:
-                    # streaming average
-                    last_acc = self.obj_v[obj][:, :, -1]
-                    new_acc = last_acc + obj_value[:, obj_id, :, -1]
-
-                    self.obj_v[obj][:, :, :-1] = (
-                        self.obj_v[obj][:, :, :-1] + obj_value[:, obj_id, :, :-1]
-                    )
-                    self.obj_v[obj][:, :, -1] = new_acc
-                else:
-                    self.obj_v[obj] = obj_value[:, obj_id]
-
-        # convert mask value tensor into a dict for insertion
-        msk_values = {obj: msk_value[:, obj_id] for obj_id, obj in enumerate(objects)}
         self.work_mem.add(
-            key,
-            msk_values,
-            shrinkage,
-            selection=selection,
-            as_permanent=(as_permanent == "all"),
+            key, shrinkage, value, obj_ids, as_permanent=(as_permanent == "all")
         )
 
-        # Simple FIFO memory management for working memory only
-        for bucket_id in self.work_mem.buckets.keys():
-            self.work_mem.remove_old_memory(bucket_id, self.max_work_tokens)
+        # Update object memory
+        if obj_v is not None:
+            for i, obj_id in enumerate(obj_ids):
+                if obj_id not in self.obj_v:
+                    self.obj_v[obj_id] = obj_v[:, i]
+                else:
+                    self.obj_v[obj_id] = torch.cat(
+                        [self.obj_v[obj_id], obj_v[:, i]], dim=1
+                    )
+
+        # Manage memory size - remove old frames if too many
+        for bucket_id, bucket in self.work_mem.buckets.items():
+            if self.work_mem.non_perm_size(bucket_id) >= self.max_mem_frames:
+                self.work_mem.remove_obsolete_features(
+                    bucket_id, self.max_mem_frames // 2
+                )
+
+    def update_sensory(self, sensory: torch.Tensor, obj_ids: List[int]) -> None:
+        """
+        Update sensory memory for the given objects
+        """
+        for i, obj_id in enumerate(obj_ids):
+            self.sensory[obj_id] = sensory[:, i]
+
+    def get_sensory(self, obj_ids: List[int]) -> torch.Tensor:
+        """
+        Get sensory memory for the given objects
+        """
+        if obj_ids[0] not in self.sensory:
+            return None
+        return torch.stack([self.sensory[obj] for obj in obj_ids], dim=1)
+
+    def initialize_sensory_if_needed(
+        self, key: torch.Tensor, obj_ids: List[int]
+    ) -> None:
+        """
+        Initialize sensory memory if it doesn't exist
+        """
+        for obj_id in obj_ids:
+            if obj_id not in self.sensory:
+                self.sensory[obj_id] = torch.zeros(
+                    (key.shape[0], self.sensory_dim, key.shape[-2], key.shape[-1]),
+                    dtype=key.dtype,
+                    device=key.device,
+                )
+
+    def clear_sensory_memory(self) -> None:
+        """
+        Clear all sensory memory
+        """
+        self.sensory = {}
+
+    def clear_non_permanent_memory(self) -> None:
+        """
+        Clear non-permanent working memory
+        """
+        self.work_mem.clear_non_permanent_memory()
+        # Clear non-permanent object memory
+        self.obj_v = {}
 
     def purge_except(self, obj_keep_idx: List[int]) -> None:
         """
         Remove all memory except for the given object indices
         """
-        # purge certain objects from the memory except the one listed
+        # Purge working memory
         self.work_mem.purge_except(obj_keep_idx)
-        self.sensory = {k: v for k, v in self.sensory.items() if k in obj_keep_idx}
 
-        if not self.work_mem.engaged():
-            # everything is removed!
-            self.engaged = False
+        # Purge sensory memory
+        sensory_to_remove = [
+            obj for obj in self.sensory.keys() if obj not in obj_keep_idx
+        ]
+        for obj in sensory_to_remove:
+            del self.sensory[obj]
 
-    def initialize_sensory_if_needed(self, sample_key: torch.Tensor, ids: List[int]):
-        for obj in ids:
-            if obj not in self.sensory:
-                # also initializes the sensory memory
-                bs, _, h, w = sample_key.shape
-                self.sensory[obj] = torch.zeros(
-                    (bs, self.sensory_dim, h, w), device=sample_key.device
-                )
-
-    def update_sensory(self, sensory: torch.Tensor, ids: List[int]):
-        # sensory: 1*num_objects*C*H*W
-        for obj_id, obj in enumerate(ids):
-            self.sensory[obj] = sensory[:, obj_id]
-
-    def get_sensory(self, ids: List[int]):
-        # returns (1/2)*num_objects*C*H*W
-        return self._get_sensory_by_ids(ids)
-
-    def clear_non_permanent_memory(self):
-        """
-        Clear non-permanent working memory
-        """
-        log.debug("About to call work_mem.clear_non_permanent_memory()")
-        self.work_mem.clear_non_permanent_memory()
-        log.debug("Completed work_mem.clear_non_permanent_memory()")
-        # Clear non-permanent object memory
-        self.obj_v = {}
-
-    def clear_sensory_memory(self):
-        self.sensory = {}
+        # Purge object memory
+        obj_v_to_remove = [obj for obj in self.obj_v.keys() if obj not in obj_keep_idx]
+        for obj in obj_v_to_remove:
+            del self.obj_v[obj]
