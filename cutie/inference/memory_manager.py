@@ -176,7 +176,7 @@ class MemoryManager:
         objects: List[int],
         selection: torch.Tensor = None,
         *,
-        as_permanent: str = "none"
+        as_permanent: str = "none",
     ) -> None:
         """
         Add to working memory. Simplified to remove long-term memory logic.
@@ -229,7 +229,7 @@ class MemoryManager:
             msk_values,
             shrinkage,
             selection=selection,
-            as_permanent=(as_permanent == "all"),
+            as_permanent=as_permanent,
         )
 
         # Simple FIFO memory management for working memory only
