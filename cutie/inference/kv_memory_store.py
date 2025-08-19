@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Tuple
 
 import torch
 
@@ -301,8 +301,6 @@ class KeyValueMemoryStore:
         else:
             usage = self.use_cnt[bucket_id] / self.life_cnt[bucket_id]
             return usage
-
-    from typing import Tuple
 
     def get_all_sliced(self, bucket_id: int, start: int, end: int) -> Tuple[
         torch.Tensor,
