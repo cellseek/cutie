@@ -16,15 +16,25 @@ class ImageFeatureStore:
     Feature of a frame should be associated with a unique index -- typically the frame id.
     """
 
-    def __init__(self, network: CUTIE, no_warning: bool = False):
+    def __init__(
+        self, network: CUTIE, no_warning: bool = False, max_cache_size: int = 10
+    ):
         self.network = network
         self._store = {}
         self.no_warning = no_warning
+        self.max_cache_size = max_cache_size  # Maximum number of frames to cache
 
     def _encode_feature(self, index: int, image: torch.Tensor) -> None:
         ms_features, pix_feat = self.network.encode_image(image)
         key, shrinkage, selection = self.network.transform_key(ms_features[0])
         self._store[index] = (ms_features, pix_feat, key, shrinkage, selection)
+
+        # Auto-cleanup old features if cache is too large
+        if len(self._store) > self.max_cache_size:
+            # Remove oldest entries (smallest indices)
+            oldest_keys = sorted(self._store.keys())[: -self.max_cache_size]
+            for old_key in oldest_keys:
+                del self._store[old_key]
 
     def get_features(
         self, index: int, image: torch.Tensor
@@ -45,6 +55,10 @@ class ImageFeatureStore:
     def delete(self, index: int) -> None:
         if index in self._store:
             del self._store[index]
+
+    def clear(self) -> None:
+        """Clear all stored features"""
+        self._store.clear()
 
     def __len__(self):
         return len(self._store)

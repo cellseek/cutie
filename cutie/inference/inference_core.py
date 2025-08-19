@@ -56,6 +56,8 @@ class InferenceCore:
         self.curr_ti = -1
         self.last_mem_ti = 0
         self.memory = MemoryManager(cfg=self.cfg, object_manager=self.object_manager)
+        # Clear image feature store to prevent memory leaks
+        self.image_feature_store.clear()
 
     def clear_non_permanent_memory(self):
         self.curr_ti = -1

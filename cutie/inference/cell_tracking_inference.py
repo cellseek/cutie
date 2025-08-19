@@ -6,6 +6,8 @@ from omegaconf import DictConfig
 
 from cutie.inference.image_feature_store import ImageFeatureStore
 from cutie.inference.inference_core import InferenceCore
+from cutie.inference.memory_manager import MemoryManager
+from cutie.inference.object_manager import ObjectManager
 from cutie.model.cutie import CUTIE
 
 log = logging.getLogger()
@@ -34,7 +36,6 @@ class CellTrackingInferenceCore(InferenceCore):
             network,
             cfg,
             image_feature_store=image_feature_store,
-            cell_tracking_mode=False,  # We handle our own logic
         )
 
         # Override config for cell tracking - disable long-term memory
@@ -83,19 +84,17 @@ class CellTrackingInferenceCore(InferenceCore):
         # Clear all memory and reset object manager for complete fresh start
         self.clear_memory()
 
-        # Also reset the object manager to clear object ID mappings from previous sequences
-        from cutie.inference.object_manager import ObjectManager
-
         self.object_manager = ObjectManager()
-
-        # Recreate memory manager with fresh object manager
-        from cutie.inference.memory_manager import MemoryManager
 
         self.memory = MemoryManager(cfg=self.cfg, object_manager=self.object_manager)
 
         self.curr_ti = -1
         self.last_mem_ti = 0
         self.last_mask = None
+
+        # Ensure image feature store is clean
+        self.image_feature_store.clear()
+
         log.info(
             "Reset CellTrackingInferenceCore for new sequence with fresh object manager"
         )
