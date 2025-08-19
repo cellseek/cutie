@@ -6,7 +6,6 @@ This module provides a simple interface for cell tracking using the modified CUT
 
 import logging
 from pathlib import Path
-from typing import Union
 
 import numpy as np
 import torch
@@ -67,68 +66,14 @@ class CutieTracker:
 
         # Initialize frame storage - stores masks for all previous frames
         self.frame_masks = []  # List of 2D numpy arrays (H, W) with object IDs
-        self.current_frame_idx = -1
 
         log.info(f"CellTracker initialized on {self.device}")
 
-    def step(
-        self,
-        image: Union[np.ndarray, torch.Tensor],
-        mask: Union[np.ndarray, torch.Tensor],
-    ) -> np.ndarray:
-        """
-        Process a single frame and return the predicted mask.
-
-        Args:
-            image: Image as numpy array (H, W, 3) or tensor (3, H, W)
-            mask: Mask for this frame (H, W) with object IDs.
-
-        Returns:
-            Predicted mask as numpy array (H, W) with object IDs
-        """
-        self.current_frame_idx += 1
-
-        # Convert image to tensor if needed
-        if isinstance(image, np.ndarray):
-            image_tensor = torch.from_numpy(image).permute(2, 0, 1).float() / 255.0
-        else:
-            image_tensor = image
-
-        image_tensor = image_tensor.to(self.device)
-
-        if isinstance(mask, np.ndarray):
-            mask_tensor = torch.from_numpy(mask).long()
-            # Extract object IDs from mask
-            unique_vals = np.unique(mask)
-            objects = [int(obj_id) for obj_id in unique_vals if obj_id > 0]
-        else:
-            mask_tensor = mask
-            # Extract object IDs from tensor mask
-            unique_vals = torch.unique(mask_tensor).cpu().numpy()
-            objects = [int(obj_id) for obj_id in unique_vals if obj_id > 0]
-
-        mask_tensor = mask_tensor.to(self.device)
-
-        # Use inference core's step method
-        with torch.no_grad():
-            pred_prob = self.inference_core.step(
-                image=image_tensor,
-                mask=mask_tensor,
-                objects=objects,  # Pass the object IDs found in the mask
-                idx_mask=True,  # Our mask contains object IDs at each pixel
-            )
-
-        # Convert prediction to mask
-        predicted_mask = self.inference_core.output_prob_to_mask(pred_prob)
-        mask_np = predicted_mask.cpu().numpy().astype(np.uint16)
-
-        return mask_np
-
     def track(
         self,
-        previous_image: Union[np.ndarray, torch.Tensor],
-        previous_mask: Union[np.ndarray, torch.Tensor],
-        current_image: Union[np.ndarray, torch.Tensor],
+        previous_image: np.ndarray,
+        previous_mask: np.ndarray,
+        current_image: np.ndarray,
     ) -> np.ndarray:
         """
         Track cells from previous frame to current frame.
@@ -138,39 +83,39 @@ class CutieTracker:
         2. Track current frame and return prediction
 
         Args:
-            previous_image: Previous frame image as numpy array (H, W, 3) or tensor (3, H, W)
+            previous_image: Previous frame image as numpy array (H, W, 3)
             previous_mask: Previous frame mask (H, W) with object IDs
-            current_image: Current frame image as numpy array (H, W, 3) or tensor (3, H, W)
+            current_image: Current frame image as numpy array (H, W, 3)
 
         Returns:
             Predicted mask as numpy array (H, W) with object IDs
         """
         # Extract object IDs from previous mask for tracking
-        if previous_mask is not None and hasattr(previous_mask, "shape"):
-            unique_vals = np.unique(previous_mask)
-            # Remove background (0) and get list of object IDs
-            object_ids = [int(obj_id) for obj_id in unique_vals if obj_id > 0]
-        else:
-            object_ids = []
+        unique_vals = np.unique(previous_mask)
+        object_ids = [int(obj_id) for obj_id in unique_vals if obj_id > 0]
 
         # Step 1: Process previous frame with its mask
-        self.step(previous_image, previous_mask)
+        # Convert previous image and mask to tensors
+        previous_image_tensor = (
+            torch.from_numpy(previous_image).permute(2, 0, 1).float() / 255.0
+        ).to(self.device)
+        previous_mask_tensor = torch.from_numpy(previous_mask).long().to(self.device)
+
+        with torch.no_grad():
+            self.inference_core.step(
+                image=previous_image_tensor,
+                mask=previous_mask_tensor,
+                objects=object_ids,
+                idx_mask=True,  # Our mask contains object IDs at each pixel
+            )
 
         # Step 2: Track current frame (no mask provided, get prediction)
-        # Convert current image to tensor if needed
-        if isinstance(current_image, np.ndarray):
-            current_image_tensor = (
-                torch.from_numpy(current_image).permute(2, 0, 1).float() / 255.0
-            )
-        else:
-            current_image_tensor = current_image
-
-        current_image_tensor = current_image_tensor.to(self.device)
-
-        self.current_frame_idx += 1
+        # Convert current image to tensor
+        current_image_tensor = (
+            torch.from_numpy(current_image).permute(2, 0, 1).float() / 255.0
+        ).to(self.device)
 
         # Use inference core's step method without mask for prediction
-        # but with object IDs from previous mask
         with torch.no_grad():
             pred_prob = self.inference_core.step(
                 image=current_image_tensor,
