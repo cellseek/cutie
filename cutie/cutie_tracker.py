@@ -61,9 +61,6 @@ class CutieTracker:
         checkpoint = torch.load(str(weights_path), map_location=self.device)
         self.network.load_weights(checkpoint)
 
-        # Initialize inference core
-        self.inference_core = InferenceCore(self.network, self.cfg)
-
         # Initialize frame storage - stores masks for all previous frames
         self.frame_masks = []  # List of 2D numpy arrays (H, W) with object IDs
 
@@ -90,6 +87,9 @@ class CutieTracker:
         Returns:
             Predicted mask as numpy array (H, W) with object IDs
         """
+
+        inference_core = InferenceCore(self.network, self.cfg)
+
         # Extract object IDs from previous mask for tracking
         unique_vals = np.unique(previous_mask)
         object_ids = [int(obj_id) for obj_id in unique_vals if obj_id > 0]
@@ -102,7 +102,7 @@ class CutieTracker:
         previous_mask_tensor = torch.from_numpy(previous_mask).long().to(self.device)
 
         with torch.no_grad():
-            self.inference_core.step(
+            inference_core.step(
                 image=previous_image_tensor,
                 mask=previous_mask_tensor,
                 objects=object_ids,
@@ -117,14 +117,16 @@ class CutieTracker:
 
         # Use inference core's step method without mask for prediction
         with torch.no_grad():
-            pred_prob = self.inference_core.step(
+            pred_prob = inference_core.step(
                 image=current_image_tensor,
                 mask=None,  # No mask for prediction step
                 objects=object_ids,  # Object IDs to track from previous mask
             )
 
         # Convert prediction to mask
-        predicted_mask = self.inference_core.output_prob_to_mask(pred_prob)
+        predicted_mask = inference_core.output_prob_to_mask(pred_prob)
         mask_np = predicted_mask.cpu().numpy().astype(np.uint16)
+
+        del inference_core
 
         return mask_np

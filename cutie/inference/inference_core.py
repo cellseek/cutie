@@ -4,13 +4,12 @@ from typing import Iterable, List, Optional
 import numpy as np
 import torch
 import torch.nn.functional as F
-from omegaconf import DictConfig
-
 from cutie.inference.image_feature_store import ImageFeatureStore
 from cutie.inference.memory_manager import MemoryManager
 from cutie.inference.object_manager import ObjectManager
 from cutie.model.cutie import CUTIE
 from cutie.utils.tensor_utils import aggregate, pad_divide_by, unpad
+from omegaconf import DictConfig
 
 log = logging.getLogger()
 
@@ -36,6 +35,7 @@ class InferenceCore:
         self.curr_ti = -1
         self.last_mem_ti = 0
         # at which time indices should we update the sensory memory
+
         if stagger_updates >= self.mem_every:
             self.stagger_ti = set(range(1, self.mem_every + 1))
         else:
@@ -49,15 +49,12 @@ class InferenceCore:
             self.image_feature_store = ImageFeatureStore(self.network)
         else:
             self.image_feature_store = image_feature_store
-
         self.last_mask = None
 
     def clear_memory(self):
         self.curr_ti = -1
         self.last_mem_ti = 0
         self.memory = MemoryManager(cfg=self.cfg, object_manager=self.object_manager)
-        # Clear image feature store to prevent memory leaks
-        self.image_feature_store.clear()
 
     def clear_non_permanent_memory(self):
         self.curr_ti = -1
@@ -99,14 +96,13 @@ class InferenceCore:
         """
         if prob.shape[1] == 0:
             # nothing to add
+
             log.warn("Trying to add an empty object mask to memory!")
             return
-
         if force_permanent:
             as_permanent = "all"
         else:
             as_permanent = "first"
-
         self.memory.initialize_sensory_if_needed(key, self.object_manager.all_obj_ids)
         msk_value, sensory, obj_value, _ = self.network.encode_mask(
             image,
@@ -155,7 +151,6 @@ class InferenceCore:
             assert bs == 2
         else:
             assert bs == 1
-
         if not self.memory.engaged:
             log.warn("Trying to segment without any memory!")
             return torch.zeros(
@@ -163,7 +158,6 @@ class InferenceCore:
                 device=key.device,
                 dtype=key.dtype,
             )
-
         memory_readout = self.memory.read(
             pix_feat, key, selection, self.last_mask, self.network
         )
@@ -176,8 +170,10 @@ class InferenceCore:
             update_sensory=update_sensory,
         )
         # remove batch dim
+
         if self.flip_aug:
             # average predictions of the non-flipped and flipped version
+
             pred_prob_with_bg = (
                 pred_prob_with_bg[0] + torch.flip(pred_prob_with_bg[1], dims=[-1])
             ) / 2
@@ -219,26 +215,19 @@ class InferenceCore:
         delete_buffer: whether to delete the image feature buffer after this step
         force_permanent: the memory recorded this frame will be added to the permanent memory
         """
-        log.debug(
-            f"step() called with curr_ti={self.curr_ti}, mask is {'None' if mask is None else 'provided'}"
-        )
         if objects is None and mask is not None:
             assert not idx_mask
             objects = list(range(1, mask.shape[0] + 1))
-
         # resize input if needed -- currently only used for the GUI
+
         resize_needed = False
         if self.max_internal_size > 0:
             h, w = image.shape[-2:]
             min_side = min(h, w)
-            log.debug(
-                f"Image size: {h}x{w}, min_side: {min_side}, max_internal_size: {self.max_internal_size}"
-            )
             if min_side > self.max_internal_size:
                 resize_needed = True
                 new_h = int(h / min_side * self.max_internal_size)
                 new_w = int(w / min_side * self.max_internal_size)
-                log.debug(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
                 image = F.interpolate(
                     image.unsqueeze(0),
                     size=(new_h, new_w),
@@ -263,19 +252,19 @@ class InferenceCore:
                             mode="bilinear",
                             align_corners=False,
                         )[0]
-
         self.curr_ti += 1
 
         image, self.pad = pad_divide_by(image, 16)
         image = image.unsqueeze(0)  # add the batch dimension
         if self.flip_aug:
             image = torch.cat([image, torch.flip(image, dims=[-1])], dim=0)
-
         # whether to update the working memory
+
         is_mem_frame = (
             (self.curr_ti - self.last_mem_ti >= self.mem_every) or (mask is not None)
         ) and (not end)
         # segment when there is no input mask or when the input mask is incomplete
+
         need_segment = (mask is None) or (
             self.object_manager.num_obj > 0 and not self.object_manager.has_all(objects)
         )
@@ -284,38 +273,38 @@ class InferenceCore:
         )
 
         # encoding the image
-        log.debug("About to call image_feature_store.get_features")
+
         ms_feat, pix_feat = self.image_feature_store.get_features(self.curr_ti, image)
-        log.debug("Completed image_feature_store.get_features")
-        log.debug("About to call image_feature_store.get_key")
         key, shrinkage, selection = self.image_feature_store.get_key(
             self.curr_ti, image
         )
-        log.debug("Completed image_feature_store.get_key")
 
         # segmentation from memory if needed
+
         if need_segment:
             pred_prob_with_bg = self._segment(
                 key, selection, pix_feat, ms_feat, update_sensory=update_sensory
             )
-
         # use the input mask if provided
+
         if mask is not None:
             # inform the manager of the new objects, and get a list of temporary id
             # temporary ids -- indicates the position of objects in the tensor
             # (starts with 1 due to the background channel)
+
             corresponding_tmp_ids, _ = self.object_manager.add_new_objects(objects)
 
             mask, _ = pad_divide_by(mask, 16)
             if need_segment:
                 # merge predicted mask with the incomplete input mask
+
                 pred_prob_no_bg = pred_prob_with_bg[1:]
                 # use the mutual exclusivity of segmentation
+
                 if idx_mask:
                     pred_prob_no_bg[:, mask > 0] = 0
                 else:
                     pred_prob_no_bg[:, mask.max(0) > 0.5] = 0
-
                 new_masks = []
                 for mask_id, tmp_id in enumerate(corresponding_tmp_ids):
                     if idx_mask:
@@ -326,11 +315,14 @@ class InferenceCore:
                         new_masks.append(this_mask.unsqueeze(0))
                     else:
                         # +1 for padding the background channel
+
                         pred_prob_no_bg[tmp_id - 1] = this_mask
                 # new_masks are always in the order of tmp_id
+
                 mask = torch.cat([pred_prob_no_bg, *new_masks], dim=0)
             elif idx_mask:
                 # simply convert cls to one-hot representation
+
                 if len(objects) == 0:
                     if delete_buffer:
                         self.image_feature_store.delete(self.curr_ti)
@@ -349,14 +341,13 @@ class InferenceCore:
                 )
             pred_prob_with_bg = aggregate(mask, dim=0)
             pred_prob_with_bg = torch.softmax(pred_prob_with_bg, dim=0)
-
         self.last_mask = pred_prob_with_bg[1:].unsqueeze(0)
         if self.flip_aug:
             self.last_mask = torch.cat(
                 [self.last_mask, torch.flip(self.last_mask, dims=[-1])], dim=0
             )
-
         # save as memory if needed
+
         if is_mem_frame or force_permanent:
             self._add_memory(
                 image,
@@ -367,20 +358,18 @@ class InferenceCore:
                 selection,
                 force_permanent=force_permanent,
             )
-
         if delete_buffer:
             self.image_feature_store.delete(self.curr_ti)
-
         output_prob = unpad(pred_prob_with_bg, self.pad)
         if resize_needed:
             # restore output to the original size
+
             output_prob = F.interpolate(
                 output_prob.unsqueeze(0),
                 size=(h, w),
                 mode="bilinear",
                 align_corners=False,
             )[0]
-
         return output_prob
 
     def delete_objects(self, objects: List[int]) -> None:
@@ -394,8 +383,8 @@ class InferenceCore:
         mask = torch.argmax(output_prob, dim=0)
 
         # index in tensor != object id -- remap the ids here
+
         new_mask = torch.zeros_like(mask)
         for tmp_id, obj in self.object_manager.tmp_id_to_obj.items():
             new_mask[mask == tmp_id] = obj.id
-
         return new_mask
