@@ -38,9 +38,8 @@ class CutieTracker:
         # Set device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Get package directory for relative paths
-        package_dir = Path(__file__).parent.parent  # cutie package root
-        config_dir = package_dir / "cutie" / "config"
+        # Try to get config directory - package resources first, then fallback
+        config_dir = self._get_config_dir()
 
         with initialize_config_dir(
             config_dir=str(config_dir.absolute()),
@@ -52,7 +51,8 @@ class CutieTracker:
         # Load model
         self.network = CUTIE(self.cfg).eval().to(self.device)
 
-        weights_path = package_dir / self.cfg.weights
+        # Get weights path using package-aware method
+        weights_path = self._get_weights_path()
 
         # Ensure weights path exists
         if not Path(weights_path).exists():
@@ -65,6 +65,54 @@ class CutieTracker:
         self.frame_masks = []  # List of 2D numpy arrays (H, W) with object IDs
 
         log.info(f"CellTracker initialized on {self.device}")
+
+    def _get_config_dir(self) -> Path:
+        """Get config directory, handling both package and development modes"""
+        try:
+            # Try package resources first (when installed as package)
+            import importlib.resources
+
+            config_path = importlib.resources.files("cutie").joinpath("config")
+            if config_path.is_dir():
+                return Path(str(config_path))
+        except (ImportError, AttributeError, FileNotFoundError):
+            pass
+
+        # Fallback to package directory (development mode)
+        package_dir = Path(__file__).parent.parent  # cutie package root
+        return package_dir / "cutie" / "config"
+
+    def _get_weights_path(self) -> Path:
+        """Get weights path, handling both package and development modes"""
+        weights_filename = self.cfg.weights
+
+        # Try absolute path first in case weights are specified with full path
+        if Path(weights_filename).is_absolute() and Path(weights_filename).exists():
+            return Path(weights_filename)
+
+        try:
+            # Try package resources first (when installed as package)
+            import importlib.resources
+
+            weights_path = importlib.resources.files("cutie").joinpath(weights_filename)
+            if weights_path.is_file():
+                return Path(str(weights_path))
+        except (ImportError, AttributeError, FileNotFoundError):
+            pass
+
+        # Fallback to package directory (development mode)
+        package_dir = Path(__file__).parent.parent  # cutie package root
+        weights_path = package_dir / weights_filename
+        if weights_path.exists():
+            return weights_path
+
+        # Look in package weights directory
+        weights_path = package_dir / "weights" / Path(weights_filename).name
+        if weights_path.exists():
+            return weights_path
+
+        # No downloads - return expected path for clear error message
+        return weights_path
 
     def track(
         self,
