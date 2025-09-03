@@ -48,12 +48,5 @@ Documentation = "https://hkchengrex.github.io/Cutie"
 "Bug Tracker" = "https://github.com/hkchengrex/Cutie/issues"
 
 [tool.setuptools]
-package-dir = { "" = "." }
-
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["cutie*"]
-exclude = ["tests*", "docs*"]
-
-[tool.setuptools.package-data]
-cutie = ["config/*.yaml", "config/model/*.yaml", "weights/*.pth"]
+packages = ["cutie"]
+include-package-data = true
