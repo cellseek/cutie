@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hydra import compose, initialize_config_dir
+from omegaconf import OmegaConf
 
 from cutie.inference.inference_core import InferenceCore
 from cutie.model.cutie import CUTIE
@@ -38,15 +38,9 @@ class CutieTracker:
         # Set device
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Try to get config directory - package resources first, then fallback
-        config_dir = self._get_config_dir()
-
-        with initialize_config_dir(
-            config_dir=str(config_dir.absolute()),
-            version_base="1.3.2",
-            job_name="cell_tracking",
-        ):
-            self.cfg = compose(config_name="cell_tracking_config")
+        # Load configuration directly from the config file
+        config_path = self._get_config_path()
+        self.cfg = OmegaConf.load(config_path)
 
         # Load model
         self.network = CUTIE(self.cfg).eval().to(self.device)
@@ -66,21 +60,28 @@ class CutieTracker:
 
         log.info(f"CellTracker initialized on {self.device}")
 
-    def _get_config_dir(self) -> Path:
-        """Get config directory, handling both package and development modes"""
+    def _get_config_path(self) -> Path:
+        """Get config file path, handling both package and development modes"""
         try:
             # Try package resources first (when installed as package)
             import importlib.resources
 
-            config_path = importlib.resources.files("cutie").joinpath("config")
-            if config_path.is_dir():
+            config_path = importlib.resources.files("cutie").joinpath(
+                "cell_tracking_config.yaml"
+            )
+            if config_path.is_file():
                 return Path(str(config_path))
         except (ImportError, AttributeError, FileNotFoundError):
             pass
 
         # Fallback to package directory (development mode)
-        package_dir = Path(__file__).parent.parent  # cutie package root
-        return package_dir / "cutie" / "config"
+        package_dir = Path(__file__).parent  # cutie package directory
+        config_path = package_dir / "cell_tracking_config.yaml"
+        if config_path.exists():
+            return config_path
+
+        # If not found, return expected path for clear error message
+        raise FileNotFoundError(f"Configuration file not found: {config_path}")
 
     def _get_weights_path(self) -> Path:
         """Get weights path, handling both package and development modes"""
