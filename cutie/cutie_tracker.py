@@ -70,7 +70,7 @@ class CutieTracker:
             )
             if config_path.is_file():
                 return Path(str(config_path))
-        except (ImportError, AttributeError, FileNotFoundError):
+        except:
             pass
 
         # Fallback to package directory (development mode)
