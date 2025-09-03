@@ -48,5 +48,8 @@ Documentation = "https://hkchengrex.github.io/Cutie"
 "Bug Tracker" = "https://github.com/hkchengrex/Cutie/issues"
 
 [tool.setuptools]
-packages = ["cutie"]
+packages = { find = {} }
 include-package-data = true
+
+[tool.setuptools.package-data]
+cutie = ["*.yaml", "*.yml"]
